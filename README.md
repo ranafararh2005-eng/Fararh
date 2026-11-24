@@ -1139,6 +1139,16 @@ img { max-width: 100%; }
   .modal.show .modal-card { animation: zoomIn .25s ease both; }
 }
 
+
+/* ===== Checkout as a separate page ===== */
+body:not(.view-checkout) #checkout { display: none; }
+.view-checkout header.hero, .view-checkout #offers, .view-checkout #products { display: none; }
+.view-checkout .bar, .view-checkout .toast { display: none; }
+.view-checkout body, body.view-checkout { padding-bottom: 40px; }
+.view-checkout .fararh-footer { padding-bottom: 40px; margin-top: 30px; }
+.co-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; direction: ltr; }
+.view-checkout #checkout { padding-top: 24px; max-width: 760px; margin-inline: auto; }
+@media (prefers-reduced-motion: no-preference) { .view-checkout #checkout { animation: fadeUp .5s ease both; } }
 </style>
 </head>
 <body>
@@ -1227,6 +1237,10 @@ img { max-width: 100%; }
   
 
   <section id="checkout" class="rv">
+    <div class="co-head">
+      <button type="button" class="ghost" id="backShop">← Back to shop</button>
+      <button type="button" class="ghost" id="editCart">Edit cart 🛍</button>
+    </div>
     <div class="sec-head"><h2>Data of order </h2></div>
 
     <form class="order" id="orderForm" novalidate>
@@ -1796,11 +1810,36 @@ function closeDrawer() {
   $("cartDrawer").setAttribute("aria-hidden", "true");
   document.body.style.overflow = "";
 }
-function goCheckout() {
+function goCheckout() { showCheckout(); }
+const inCheckout = () => document.body.classList.contains("view-checkout");
+function showCheckout(push = true) {
   closeDrawer();
   $("toast").classList.remove("show");
-  $("checkout").scrollIntoView({ behavior: "smooth", block: "start" });
+  if (calc().qty === 0) { openDrawer(); return; }
+  document.body.classList.add("view-checkout");
+  $("checkout").classList.add("in");
+  if (push && location.hash !== "#checkout") { try { history.pushState({ v: "co" }, "", "#checkout"); } catch (e) {} }
+  window.scrollTo(0, 0);
 }
+function showShop(targetId, push = true) {
+  const was = inCheckout();
+  document.body.classList.remove("view-checkout");
+  if (was && push && location.hash === "#checkout") { try { history.pushState({ v: "shop" }, "", "#" + (targetId || "home")); } catch (e) {} }
+  const t = targetId && $(targetId);
+  requestAnimationFrame(() => { if (t) t.scrollIntoView(); else window.scrollTo(0, 0); });
+}
+window.addEventListener("popstate", () => {
+  if (location.hash === "#checkout" && calc().qty > 0) showCheckout(false);
+  else if (inCheckout()) showShop(null, false);
+});
+document.querySelectorAll('a[href^="#"]').forEach((a) => a.addEventListener("click", (e) => {
+  const id = a.getAttribute("href").slice(1);
+  if (id === "checkout") { e.preventDefault(); showCheckout(); }
+  else if (inCheckout()) { e.preventDefault(); showShop(id); }
+}));
+$("backShop").addEventListener("click", () => showShop("products"));
+$("editCart").addEventListener("click", openDrawer);
+if (location.hash === "#checkout") { try { history.replaceState(null, "", "#home"); } catch (e) {} }
 
 let toastTimer;
 function showToast(msg) {
@@ -1932,6 +1971,9 @@ $("orderForm").addEventListener("submit", async (ev) => {
     const [receipt, thumb] = await Promise.all([fileToJpeg(f, 1600, 0.8), fileToJpeg(f, 900, 0.7)]);
     await api({ action: "order", botField: form.elements["bot-field"].value, order: info, receipt, thumb });
     showResult("ok", "Your order has been received (" + id + "). We will review the transfer and contact you on your number to confirm the shipment.");
+    const again = el("button", { type: "button" }, "Continue shopping");
+    again.addEventListener("click", () => { $("result").hidden = true; showShop("products"); });
+    $("result").append(again);
     Object.keys(cart).forEach((k) => delete cart[k]);
     form.reset(); $("preview").style.display = "none"; $("fileName").textContent = "";
     $("paymentDetails").hidden = true;
@@ -1944,6 +1986,9 @@ $("orderForm").addEventListener("submit", async (ev) => {
       "Address: " + info.address, itemsText, "Total: " + fmt(info.total), "Payment: " + info.method
     ].join("\n");
     showResult("bad", "We were unable to process your order. Please send a photo of the payment transfer and your order details via WhatsApp or Instagram.", summary);
+    const why = el("p", { class: "note" }, "Technical reason: " + (e && e.message ? e.message : e));
+    why.style.direction = "ltr";
+    $("result").append(why);
   }
   btn.disabled = false; btn.textContent = "Confirm";
 });
@@ -2185,6 +2230,7 @@ if (navLogo && $("heroLogo")) $("heroLogo").src = navLogo.src;
   items.forEach((e) => io.observe(e));
 })();
 
+console.log("Fararh store build 2026-11-25");
 renderStatic();
 resetProductForm();
 update();
