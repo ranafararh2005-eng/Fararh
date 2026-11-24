@@ -1,4 +1,3 @@
-<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
   <script>document.documentElement.classList.add("js")</script>
