@@ -1298,7 +1298,7 @@ body:not(.view-checkout) #checkout { display: none; }
   <option value="South Sinai">South Sinai</option>
 </select>
 <p class="shipping-note">
-  Shipping fees vary by governorate and will be confirmed before payment.
+  Flat shipping fee of 60 EGP to all governorates (included in the total).
 </p>
         <div class="field"><label for="address">address</label><textarea id="address" name="address" autocomplete="street-address" placeholder="الشارع، رقم العمارة، الدور، علامة مميزة"></textarea><div class="err" data-for="address"></div></div>
       </div>
@@ -1527,6 +1527,7 @@ const CURRENCY = "EGP";
 const DEPOSIT_PCT = 100;
 const WHATSAPP = "";                                   // اختياري: رقم واتساب دولي بدون + (بيظهر لو الأوردر فشل)
 const API_URL = "https://script.google.com/macros/s/AKfycbzwN0aFAde7LdzZY1DZeTehAkno5dvySEt3hq_k31lIW-xZ7bF7AgFkVsu7S_K1cxLh/exec";     // ← رابط Web App بتاع Apps Script
+const SHIPPING_FEE = 60;                               // الشحن: 60 جنيه لكل المحافظات
 const PROMOS = { "RAN2005": 15 };                      // أكواد الخصم: الكود → النسبة %
 const CATEGORIES = [
   ["necklace", "Necklaces"], ["ring", "Rings"], ["earring", "Earrings"], ["bracelet", "Bracelets"],
@@ -1639,8 +1640,8 @@ function calc() {
   const autoPct = qty >= AUTO_OFFER.minQty ? AUTO_OFFER.pct : 0;
   const pct = Math.max(autoPct, promoPct);
   const discount = Math.round(subtotal * pct / 100);
-  const shipping = 0;                       // الشحن بيتأكد يدوي
-  const total = subtotal - discount;
+  const shipping = qty > 0 ? SHIPPING_FEE : 0;
+  const total = subtotal - discount + shipping;
   const deposit = total;
   return { ls, qty, subtotal, pct, discount, shipping, total, deposit };
 }
@@ -1704,8 +1705,9 @@ function initMethod() {
 
 function addToCart(p) {
   cart[p.id] = 1;
-  update();
-  showAdded(p);
+  try { showAdded(p); } catch (e) { console.warn(e); }   // البوب أب الأول، قبل أي تحديث تاني
+  try { update(); } catch (e) { console.warn(e); }
+  try { saveCart(); } catch (e) {}
 }
 
 function renderGrid() {
@@ -1878,11 +1880,13 @@ if (location.hash === "#checkout") { try { history.replaceState(null, "", "#home
 
 let toastTimer;
 function showAdded(p) {
-  const im = $("addedImg");
-  im.onerror = () => { im.onerror = null; im.src = placeholderImg(p); };
-  im.src = p.img || placeholderImg(p);
-  $("addedName").textContent = p.name;
   $("addedModal").classList.add("show");
+  try {
+    $("addedName").textContent = p.name;
+    const im = $("addedImg");
+    im.onerror = () => { im.onerror = null; im.src = placeholderImg(p); };
+    im.src = p.img || placeholderImg(p);
+  } catch (e) { console.warn(e); }
 }
 const hideAdded = () => $("addedModal").classList.remove("show");
 $("addedContinue").addEventListener("click", hideAdded);
@@ -2008,7 +2012,7 @@ $("orderForm").addEventListener("submit", async (ev) => {
   const info = {
     id, name: $("name").value.trim(), phone: $("phone").value.trim(), gov: $("gov").value,
     address: $("address").value.trim(), method: $("method").value, txref: $("txref").value.trim(),
-    itemsText, items: c.ls.map((l) => ({ name: l.name, qty: l.qty, price: l.price })), subtotal: c.subtotal, discount: c.discount, pct: c.pct, promo: promoCode, total: c.total
+    itemsText, items: c.ls.map((l) => ({ name: l.name, qty: l.qty, price: l.price })), subtotal: c.subtotal, shipping: c.shipping, discount: c.discount, pct: c.pct, promo: promoCode, total: c.total
   };
 
   btn.disabled = true; btn.textContent = "Sending your order…";
