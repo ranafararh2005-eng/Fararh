@@ -1149,6 +1149,13 @@ body:not(.view-checkout) #checkout { display: none; }
 .co-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; direction: ltr; }
 .view-checkout #checkout { padding-top: 24px; max-width: 760px; margin-inline: auto; }
 @media (prefers-reduced-motion: no-preference) { .view-checkout #checkout { animation: fadeUp .5s ease both; } }
+
+.modal.sheet { z-index: 180; align-items: end; }
+.modal.sheet .modal-card { width: min(440px, 100%); box-shadow: 0 -10px 40px rgba(101, 48, 15, .25); }
+.added-top { display: flex; gap: 12px; align-items: center; }
+.added-top img { width: 64px; height: 64px; object-fit: cover; border-radius: 12px; border: 1px solid #E3D4C2; background: #fff; }
+.added-top b { color: #1F7A4D; font-size: 1.05rem; }
+@media (min-width: 700px) { .modal.sheet { align-items: center; } }
 </style>
 </head>
 <body>
@@ -1420,6 +1427,16 @@ body:not(.view-checkout) #checkout { display: none; }
   </div>
 </aside>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="modal sheet" id="addedModal">
+  <div class="modal-card added" dir="ltr">
+    <div class="added-top">
+      <img id="addedImg" alt="">
+      <div><b>✓ Added to cart</b><div class="note" id="addedName"></div></div>
+    </div>
+    <button type="button" id="addedCart">Go to cart</button>
+    <button type="button" class="ghost" id="addedContinue">Continue shopping</button>
+  </div>
+</div>
 
 <!-- ===== Admin login ===== -->
 <div class="modal" id="loginModal">
@@ -1447,6 +1464,7 @@ body:not(.view-checkout) #checkout { display: none; }
     <div class="tabs">
       <button type="button" class="tab active" data-tab="prod">المنتجات</button>
       <button type="button" class="tab" data-tab="ord">الطلبات</button>
+      <button type="button" class="tab" data-tab="set">الإعدادات</button>
     </div>
 
     <div id="tabProd" class="admin-in">
@@ -1475,6 +1493,16 @@ body:not(.view-checkout) #checkout { display: none; }
       </div>
     </div>
 
+    <div id="tabSet" class="admin-in" hidden>
+      <div class="panel-box">
+        <h3>تغيير كلمة السر</h3>
+        <div class="field"><label for="pwNew">كلمة السر الجديدة (6 على الأقل)</label><input id="pwNew" type="password" autocomplete="new-password"></div>
+        <div class="field"><label for="pwNew2">اكتبها تاني للتأكيد</label><input id="pwNew2" type="password" autocomplete="new-password"></div>
+        <div class="err" id="pwMsg"></div>
+        <div class="row-btns"><button type="button" id="pwSave">تغيير كلمة السر</button></div>
+      </div>
+    </div>
+
     <div id="tabOrd" class="admin-in" hidden>
       <div class="panel-box">
         <div class="row-btns">
@@ -1498,7 +1526,7 @@ const BRAND = "FARARH ACCESSORIES";
 const CURRENCY = "EGP";
 const DEPOSIT_PCT = 100;
 const WHATSAPP = "";                                   // اختياري: رقم واتساب دولي بدون + (بيظهر لو الأوردر فشل)
-const API_URL = "https://script.google.com/macros/s/AKfycbwOh_tlRqB2MRM5mVMMuADXETv6s-duQCH5MCepI2GnOYx9Kk_69_qyx_fmnmJ1nzt5/exec";     // ← رابط Web App بتاع Apps Script
+const API_URL = "https://script.google.com/macros/s/AKfycbzwN0aFAde7LdzZY1DZeTehAkno5dvySEt3hq_k31lIW-xZ7bF7AgFkVsu7S_K1cxLh/exec";     // ← رابط Web App بتاع Apps Script
 const PROMOS = { "RAN2005": 15 };                      // أكواد الخصم: الكود → النسبة %
 const CATEGORIES = [
   ["necklace", "Necklaces"], ["ring", "Rings"], ["earring", "Earrings"], ["bracelet", "Bracelets"],
@@ -1520,11 +1548,6 @@ const PAY_METHODS = [
     name: "InstaPay",
     num: "YOUR_INSTAPAY_ADDRESS",
     hint: "Transfer using InstaPay"
-  },
-  {
-    name: "Vodafone Cash",
-    num: "YOUR_VODAFONE_NUMBER",
-    hint: "Transfer using Vodafone Cash"
   }
 ];
 
@@ -1663,6 +1686,17 @@ function renderStatic() {
     ms.innerHTML = "";
     ms.append(el("option", { value: "" }, "Choose payment method"));
     PAY_METHODS.forEach((m) => ms.append(el("option", { value: m.name }, m.name)));
+    initMethod();
+  }
+}
+
+function initMethod() {
+  const ms = $("method");
+  if (PAY_METHODS.length === 1) {
+    const first = ms.querySelector('option[value=""]');
+    if (first) first.remove();
+    ms.value = PAY_METHODS[0].name;
+    ms.dispatchEvent(new Event("change"));
   }
 }
 
@@ -1671,7 +1705,7 @@ function renderStatic() {
 function addToCart(p) {
   cart[p.id] = 1;
   update();
-  showToast(p.name + " added to cart");
+  showAdded(p);
 }
 
 function renderGrid() {
@@ -1814,6 +1848,7 @@ function goCheckout() { showCheckout(); }
 const inCheckout = () => document.body.classList.contains("view-checkout");
 function showCheckout(push = true) {
   closeDrawer();
+  hideAdded();
   $("toast").classList.remove("show");
   if (calc().qty === 0) { openDrawer(); return; }
   document.body.classList.add("view-checkout");
@@ -1842,6 +1877,18 @@ $("editCart").addEventListener("click", openDrawer);
 if (location.hash === "#checkout") { try { history.replaceState(null, "", "#home"); } catch (e) {} }
 
 let toastTimer;
+function showAdded(p) {
+  const im = $("addedImg");
+  im.onerror = () => { im.onerror = null; im.src = placeholderImg(p); };
+  im.src = p.img || placeholderImg(p);
+  $("addedName").textContent = p.name;
+  $("addedModal").classList.add("show");
+}
+const hideAdded = () => $("addedModal").classList.remove("show");
+$("addedContinue").addEventListener("click", hideAdded);
+$("addedCart").addEventListener("click", () => { hideAdded(); openDrawer(); });
+$("addedModal").addEventListener("click", (e) => { if (e.target === e.currentTarget) hideAdded(); });
+
 function showToast(msg) {
   const t = $("toast");
   t.textContent = "";
@@ -1961,14 +2008,23 @@ $("orderForm").addEventListener("submit", async (ev) => {
   const info = {
     id, name: $("name").value.trim(), phone: $("phone").value.trim(), gov: $("gov").value,
     address: $("address").value.trim(), method: $("method").value, txref: $("txref").value.trim(),
-    itemsText, subtotal: c.subtotal, discount: c.discount, pct: c.pct, promo: promoCode, total: c.total
+    itemsText, items: c.ls.map((l) => ({ name: l.name, qty: l.qty, price: l.price })), subtotal: c.subtotal, discount: c.discount, pct: c.pct, promo: promoCode, total: c.total
   };
 
   btn.disabled = true; btn.textContent = "Sending your order…";
   try {
     if (!apiReady()) throw new Error("API_URL is not set");
     const f = $("receipt").files[0];
-    const [receipt, thumb] = await Promise.all([fileToJpeg(f, 1600, 0.8), fileToJpeg(f, 900, 0.7)]);
+    let receipt, thumb;
+    try {
+      [receipt, thumb] = await Promise.all([fileToJpeg(f, 1600, 0.8), fileToJpeg(f, 900, 0.7)]);
+      if (!receipt || receipt.data.length < 5000 || receipt.w < 150 || receipt.h < 150) throw new Error("tiny");
+    } catch (imgErr) {
+      setErr("receipt", "This image can't be used. Choose a clear photo/screenshot of the transfer.");
+      $("receipt").scrollIntoView({ behavior: "smooth", block: "center" });
+      btn.disabled = false; btn.textContent = "Confirm";
+      return;                                  // مفيش أوردر من غير صورة سليمة
+    }
     await api({ action: "order", botField: form.elements["bot-field"].value, order: info, receipt, thumb });
     showResult("ok", "Your order has been received (" + id + "). We will review the transfer and contact you on your number to confirm the shipment.");
     const again = el("button", { type: "button" }, "Continue shopping");
@@ -1976,7 +2032,7 @@ $("orderForm").addEventListener("submit", async (ev) => {
     $("result").append(again);
     Object.keys(cart).forEach((k) => delete cart[k]);
     form.reset(); $("preview").style.display = "none"; $("fileName").textContent = "";
-    $("paymentDetails").hidden = true;
+    initMethod();
     promoPct = 0; promoCode = ""; $("promo").value = ""; $("promoMsg").textContent = "";
     update();
   } catch (e) {
@@ -2045,6 +2101,7 @@ function switchTab(t) {
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === t));
   $("tabProd").hidden = t !== "prod";
   $("tabOrd").hidden = t !== "ord";
+  $("tabSet").hidden = t !== "set";
   if (t === "ord") loadOrders();
 }
 document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
@@ -2192,6 +2249,19 @@ async function loadOrders() {
     });
   } catch (e) { box.textContent = ""; box.append(el("p", { class: "err" }, "❌ " + e.message)); }
 }
+$("pwSave").addEventListener("click", async () => {
+  const a = $("pwNew").value, b = $("pwNew2").value, m = $("pwMsg");
+  m.className = "err"; m.textContent = "";
+  if (a.length < 6) { m.textContent = "كلمة السر لازم تكون 6 على الأقل"; return; }
+  if (a !== b) { m.textContent = "الكلمتين مش زي بعض"; return; }
+  $("pwSave").disabled = true;
+  try {
+    await api({ action: "changePassword", password: adminPw, newPassword: a });
+    adminPw = a; $("pwNew").value = ""; $("pwNew2").value = "";
+    m.className = "ok-text"; m.textContent = "✅ اتغيرت. استخدم الكلمة الجديدة المرة الجاية.";
+  } catch (e) { m.textContent = "❌ " + e.message; }
+  $("pwSave").disabled = false;
+});
 $("ordRefresh").addEventListener("click", loadOrders);
 $("ordSheet").addEventListener("click", () => { if (sheetUrl) window.open(sheetUrl, "_blank", "noopener"); else alert("اضغط تحديث الأول"); });
 $("ordXlsx").addEventListener("click", async () => {
@@ -2212,6 +2282,7 @@ $("ordXlsx").addEventListener("click", async () => {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   closeDrawer();
+  hideAdded();
   showEl($("loginModal"), false);
 });
 
